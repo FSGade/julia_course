@@ -1,4 +1,3 @@
-#=
 # Ex 2.1
 open("ex1.acc") do file
     for ln in eachline(file)
@@ -29,7 +28,6 @@ nl = open(fn) do f
 end
 
 println(nl)
-=#
 
 #Ex 2.4-9
 for i = 1:3
