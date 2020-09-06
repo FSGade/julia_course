@@ -62,3 +62,23 @@ avg = open("1to9") do f
 end
 println(avg)
 =#
+
+function get_number(num)
+    println(string("Is your number ", string(num), "?"))
+    chomp(readline())
+end
+
+function guess_number(mini, maxi)
+    guess = Int(floor( (mini + maxi) / 2 ))
+    response = get_number(guess)
+    if response == "higher"
+        guess_number(guess + 1, maxi)
+    elseif response == "lower"
+        guess_number(mini, guess)
+    elseif response == "yes"
+        println("Gotcha!")
+        return
+    end
+end
+
+guess_number(1,10)
