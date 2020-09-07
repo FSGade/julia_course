@@ -43,8 +43,7 @@ function dist(x, y, d)
     @simd for i = 1:d
         @inbounds r[i] = y[i] - x[i]
     end
-    squared!(r)
-    sqrt(sum(r))
+    squared!(r) |> (sqrt ∘ sum)
 end
 
 function get_dists(datapoints)
@@ -108,6 +107,23 @@ function generate_candidate(seed, dists, neighbours, threshold)
     return candidate_cluster
 end
 
+function remove_clustered(remove, arr)
+    filter!(x-> x ∉ remove, arr)
+end
+
+function update_data(best, unclustered, neighbours)
+    remove_clustered(best, unclustered)
+    remove_clustered(best, neighbours)
+    for i in eachindex(neighbours)
+        remove_clustered(best, neighbours[i])
+    end
+    unclustered, neighbours
+end
+
+function update_output(output, best_cluster)
+    push!(output, sort(map(x -> x-1, best_cluster)))
+end
+
 function QT(filename, percentage)
     names, datapoints = open(read_points, filename)
     num_points = size(datapoints, 2)
@@ -116,26 +132,26 @@ function QT(filename, percentage)
     neighbours = get_neighbours(dists, threshold, num_points)
 
     unclustered = collect(1:num_points)
+    output = []
 
     while length(unclustered) != 0
-        cluster_size = 0
+        best_cluster_size = 0
         best_cluster = []
+
         for seed in unclustered
             candidate = generate_candidate(seed, dists, neighbours, threshold)
-            if length(candidate) > length(best_cluster)
+            candidate_size = length(candidate)
+            if candidate_size > best_cluster_size
                 best_cluster = candidate
+                best_cluster_size = candidate_size
             end
         end
 
-        println(sort(map(x -> x-1, best_cluster)))
-
-        filter!(x-> x ∉ best_cluster, unclustered)
-        filter!(x-> x ∉ best_cluster, neighbours)
-        for i in 1:length(neighbours)
-            filter!(x-> x ∉ best_cluster, neighbours[i])
-        end
+        update_output(output, best_cluster)
+        update_data(best_cluster, unclustered, neighbours)
     end
-
+    output
 end
+
 println("---------------------------")
-@time QT("/home/frederik/julia_course/data/point1000.lst", 30)
+@time QT("/home/frederik/Desktop/julia_course/data/point1000.lst", 30) |> println
