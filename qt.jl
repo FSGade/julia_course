@@ -3,8 +3,14 @@
 # NO OPTIMISATIONS (ONLY "DIAMETER CACHE")
 # AUTHOR: FREDERIK GADE
 
-@show ARGS
-println(ARGS)
+#@show ARGS
+
+if length(ARGS) == 1
+    filename = ARGS[1]
+else
+    println("No file name given.")
+    exit(1)
+end
 
 function dp(lnsplit, offset)
     [parse(Float64, x) for x in lnsplit[offset:end]]
@@ -84,6 +90,7 @@ function generate_candidate(seed, dists, neighbours, threshold)
     last_added = seed
     seed_neighbours = copy(neighbours[seed])
     diameter_cache = zeros(length(seed_neighbours))
+    candidate_diameter = 0
     while length(seed_neighbours) > 0
         for index in 1:length(seed_neighbours)
             d = dists[last_added, seed_neighbours[index]]
@@ -96,15 +103,19 @@ function generate_candidate(seed, dists, neighbours, threshold)
         candidate_point_val = seed_neighbours[candidate_point]
 
         if diameter_cache[candidate_point] < threshold
+            candidate_diameter = diameter_cache[candidate_point]
             push!(candidate_cluster, candidate_point_val)
             last_added = candidate_point_val
             popat!(seed_neighbours, candidate_point)
             popat!(diameter_cache, candidate_point)
         else
-            return candidate_cluster
+            return candidate_cluster, candidate_diameter
         end
     end
-    return candidate_cluster
+    if candidate_diameter == 0
+        return candidate_cluster, Inf
+    end
+    return candidate_cluster, candidate_diameter
 end
 
 function remove_clustered(remove, arr)
@@ -136,22 +147,28 @@ function QT(filename, percentage)
 
     while length(unclustered) != 0
         best_cluster_size = 0
+        best_diameter = 0
         best_cluster = []
 
         for seed in unclustered
-            candidate = generate_candidate(seed, dists, neighbours, threshold)
+            candidate, candidate_diameter = generate_candidate(seed, dists, neighbours, threshold)
             candidate_size = length(candidate)
+
             if candidate_size > best_cluster_size
                 best_cluster = candidate
                 best_cluster_size = candidate_size
+                best_diameter = candidate_diameter
+            elseif candidate_size == best_cluster_size && candidate_diameter < best_diameter
+                best_cluster = candidate
+                best_cluster_size = candidate_size
+                best_diameter = candidate_diameter
             end
         end
 
         update_output(output, best_cluster)
-        update_data(best_cluster, unclustered, neighbours)
+        unclustered, neighbours = update_data(best_cluster, unclustered, neighbours)
     end
     output
 end
 
-println("---------------------------")
-@time QT("/home/frederik/Desktop/julia_course/data/point1000.lst", 30) |> println
+@time QT(filename, 30) |> println
