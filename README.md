@@ -30,4 +30,4 @@ The exercise script files can be found in exercises/ex*n*.jl
 | 9 | Comprehension and Generators |  [[9]](https://teaching.healthtech.dtu.dk/22110/index.php/Comprehension_and_Generators)|
 | 10 | Useful Functions and Methods |  [[10]](https://teaching.healthtech.dtu.dk/22110/index.php/Useful_Functions_and_Methods)|
 
-**NB:** This does not include the Python exercise on functions, as they are already implemented in the other exercises per the Julia idiom.
+**NB:** This does not include the [Python exercise on functions](https://teaching.healthtech.dtu.dk/22110/index.php/Python_Functions), as they are already implemented in the other exercises per the Julia idiom.
