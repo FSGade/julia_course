@@ -177,15 +177,13 @@ end
 function update_data!(unclustered::Array{Int64,1},
         neighbours::Array{Array{Int64,1},1},
         candidate_clusters::Array{Array{Int64,1},1}, best::Array{Int64,1})
-    remove_clustered!(unclustered, best)
-    remove_clustered!(neighbours, best)
-    remove_clustered!(candidate_clusters, best)
-    for i in eachindex(neighbours)
-        remove_clustered!(neighbours[i], best)
+    for i in unclustered
+        neighbours[i] = setdiff(neighbours[i], best)
         if length(intersect(candidate_clusters[i], best)) != 0
             candidate_clusters[i] = Int[]
         end
     end
+    remove_clustered!(unclustered, best)
     nothing
 end
 
@@ -231,6 +229,35 @@ function write_output(outfile, i, names, datapoints)
     end
 end
 
+function get_best_cluster(unclustered, dists, neighbours, threshold,
+        candidate_clusters, candidate_diameters)
+    best_cluster_size = 0
+    best_diameter = 0
+    best_cluster = Int[]
+    for seed in unclustered
+        if length(candidate_clusters[seed]) != 0
+            candidate, candidate_diameter =
+                candidate_clusters[seed], candidate_diameters[seed]
+            candidate_size = length(candidate)
+        else
+            candidate, candidate_diameter =
+                generate_candidate(seed, dists, neighbours, threshold)
+            candidate_clusters[seed] = candidate
+            candidate_diameters[seed] = candidate_diameter
+            candidate_size = length(candidate)
+        end
+
+        if candidate_size > best_cluster_size ||
+                (candidate_size == best_cluster_size
+                && candidate_diameter < best_diameter)
+            best_cluster = candidate
+            best_cluster_size = candidate_size
+            best_diameter = candidate_diameter
+        end
+    end
+    best_cluster
+end
+
 ###
 ### MAIN FUNCTION
 ###
@@ -252,35 +279,15 @@ function QT(filename::String, _threshold::String)
     cluster_num = 1
     outfile = open(filename*".out", "w")
 
-    while length(unclustered) != 0
-        best_cluster_size = 0
-        best_diameter = 0
-        best_cluster = Int[]
+    while length(unclustered) > 0
+        best_cluster = get_best_cluster(unclustered, dists, neighbours,
+            threshold, candidate_clusters, candidate_diameters)
 
-        for seed in unclustered
-            if length(candidate_clusters[seed]) != 0
-                candidate, candidate_diameter =
-                    candidate_clusters[seed], candidate_diameters[seed]
-                candidate_size = length(candidate)
-            else
-                candidate, candidate_diameter =
-                    generate_candidate(seed, dists, neighbours, threshold)
-                candidate_clusters[seed] = candidate
-                candidate_diameters[seed] = candidate_diameter
-                candidate_size = length(candidate)
-            end
-
-            if candidate_size > best_cluster_size ||
-                    (candidate_size == best_cluster_size
-                    && candidate_diameter < best_diameter)
-                best_cluster = candidate
-                best_cluster_size = candidate_size
-                best_diameter = candidate_diameter
-            end
-        end
+        #sorted_cluster = sort(best_cluster)
+        sorted_cluster = best_cluster
 
         write_output(outfile, cluster_num,
-            names[best_cluster], datapoints[:,best_cluster])
+            names[sorted_cluster], datapoints[:,sorted_cluster])
         cluster_num += 1
 
         update_data!(unclustered, neighbours, candidate_clusters, best_cluster)
