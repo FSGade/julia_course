@@ -3,7 +3,7 @@
 # SAVE CANDIDATE CLUSTERS & "DIAMETER CACHE" OPTIMISATIONS
 # AUTHOR: FREDERIK GADE
 
-#@show ARGS
+using LinearAlgebra: dot, mul!
 
 ###
 ### HELPER FUNCTIONS
@@ -59,24 +59,6 @@ end
 function remove_clustered!(arr::Array{Int64,1}, remove::Array{Int64,1})
     filter!(x-> x ∉ remove, arr)
 end
-function remove_clustered!(arr::Array{Array{Int64,1},1},
-        remove::Array{Int64,1})
-    filter!(x-> x ∉ remove, arr)
-end
-
-function sq_diff!(r,x,y)
-    @inbounds @simd for i = eachindex(r)
-        @inbounds r[i] = (y[i] - x[i])^2
-    end
-end
-
-#TODO: LISPify with exprs to simplify to dim might optimise?
-function dist(x::Array{Float64,1}, y::Array{Float64,1}, d::Int64)::Float64
-    #ntuple(i->(y[i] - x[i])^2, d) |> (sqrt ∘ sum)
-    r = Vector{Float64}(undef, d)
-    sq_diff!(r,x,y)
-    sqrt(sum(r))
-end
 
 ###
 ### PREPROCESSING FUNCTIONS
@@ -127,20 +109,39 @@ function read_points(f, lc)
     names, datapoints
 end
 
-function get_dists(datapoints)
-    dim, num_points = size(datapoints)
-    diameter = -Inf
-    dists = zeros(eltype(datapoints), num_points, num_points)
-    @inbounds for i = 1:num_points
-        @inbounds for j = i+1:num_points
-            @inbounds d = dist(datapoints[:,i], datapoints[:,j], dim)
-            @inbounds dists[i,j] = dists[j,i] = d
-            if d > diameter
-                diameter = d
-            end
+function sumsq_percol(a::Array{Float64,2})
+    n = size(a, 2)
+    r = Vector{Float64}(undef, n)
+    @simd for j in 1:n
+        aj = view(a, :, j)
+        r[j] = dot(aj, aj)
+    end
+    return r
+end
+
+function _pairwise!(r::Array{Float64,2}, a::Array{Float64,2})
+    m, n = size(a)
+    mul!(r, a', a)
+    sa2 = sumsq_percol(a)
+    @inbounds for j = 1:n
+        for i = 1:(j - 1)
+            r[i, j] = r[j, i]
+        end
+        r[j, j] = 0
+        sa2j = sa2[j]
+        @simd for i = (j + 1):n
+            r[i, j] = sqrt(max(sa2[i] + sa2j - 2 * r[i, j], 0))
         end
     end
-    dists, diameter
+    r
+end
+
+function get_dists(datapoints)
+    n = size(datapoints, 2)
+    r = Matrix{Float64}(undef, n, n)
+    _pairwise!(r, datapoints)
+    diameter = maximum(r)
+    r, diameter
 end
 
 function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
