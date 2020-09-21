@@ -12,10 +12,10 @@ function get_args()
     arg_len = length(ARGS)
     if arg_len == 2
         filename = ARGS[1]
-        threshold = ARGS[2]
+        _threshold = ARGS[2]
     elseif arg_len == 1
-        if ARGS[1] in ("-h","--help")
-            println("usage: julia "*PROGRAM_FILE* " inputfile threshold")
+        if ARGS[1] in ("-h", "--help")
+            println("usage: julia ", PROGRAM_FILE, " inputfile threshold")
             println()
             println("""QT (Quality Threshold) Clustering is an algorithm that groups multi-dimensional
             vectors into high quality clusters. Quality is ensured by finding large cluster
@@ -39,11 +39,7 @@ function get_args()
         println("Too many arguments supplied (only 2 allowed). Use flag -h/--help for help.")
         exit(1)
     end
-    return filename, parse(Int64, threshold)
-end
-
-function get_threshold(percentage::Int64, diameter::Float64)::Float64
-    diameter * percentage / 100
+    return filename, _threshold
 end
 
 function tab_split(ln)
@@ -86,12 +82,29 @@ end
 ### PREPROCESSING FUNCTIONS
 ###
 
-function validate_input(filename, percentage)
-    println()
+function validate_input(filename, _threshold)
+    percentage = false
+    lc = 0
+    try
+        lc = countlines(filename)
+    catch e
+        msg = sprint(showerror, e)
+        println(msg)
+    end
+    threshold = tryparse(Float64, _threshold)
+    if threshold === nothing
+        if _threshold[end] == '%'
+            percentage = true
+            _threshold = chop(_threshold)
+            threshold = tryparse(Float64, _threshold)
+            (threshold === nothing) && throw(ArgumentError())
+        end
+    end
+    threshold, percentage, lc
 end
 
 #TODO: Name list
-function read_points(f)
+function read_points(f, lc)
     i = 1
     firstline = tab_split(readline(f))
     if tryparse(Float64, firstline[1]) === nothing
@@ -102,16 +115,13 @@ function read_points(f)
         offset = 1
     end
 
-    name, datapoint = dp(firstline, offset, i)
-    names = [name]
-    datapoints = Matrix{Float64}(undef, dim, 0)
-    datapoints = hcat(datapoints, datapoint)
+    datapoints = Matrix{Float64}(undef, dim, lc)
+    names = Vector{String}(undef, lc)
 
+    names[i], datapoints[:, i] = dp(firstline, offset, i)
     for ln in eachline(f)
         i += 1
-        name, datapoint = dp(tab_split(ln), offset, i)
-        datapoints = hcat(datapoints, datapoint)
-        push!(names, name)
+        names[i], datapoints[:, i] = dp(tab_split(ln), offset, i)
     end
 
     names, datapoints
@@ -223,12 +233,15 @@ end
 ###
 ### MAIN FUNCTION
 ###
-function QT(filename::String, percentage::Int64)
-    validate_input(filename, percentage)
-    names, datapoints = open(read_points, filename)
+function QT(filename::String, _threshold::String)
+    threshold, percentage, lc = validate_input(filename, _threshold)
+    names, datapoints = open(f->read_points(f, lc), filename)
     num_points = size(datapoints, 2)
     dists, diameter = get_dists(datapoints)
-    threshold = get_threshold(percentage, diameter)
+
+    if percentage
+        threshold = threshold/100 * diameter
+    end
     neighbours = get_neighbours(dists, threshold, num_points)
 
     unclustered = collect(1:num_points)
