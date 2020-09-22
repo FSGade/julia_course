@@ -75,7 +75,12 @@ function validate_input(filename, _threshold)
             percentage = true
             _threshold = chop(_threshold)
             threshold = tryparse(Float64, _threshold)
-            (threshold === nothing) && throw(ArgumentError())
+            (threshold === nothing) && throw(ArgumentError("Threshold has to be a number or percentage"))
+            if threshold < 0
+                throw(ArgumentError("Threshold has to be positive"))
+            elseif threshold > 100
+                @warn "Percentage given is over 100%."
+            end
         end
     end
     threshold, percentage, lc
@@ -232,14 +237,11 @@ function generate_candidate(seed, dists, neighbours::Array{Array{Int64,1},1},
     return candidate_cluster, candidate_diameter
 end
 
-function write_output(outfile, i, names, datapoints)
+function write_output(outfile::IO, i::Int64, names::Array{String, 1},
+    datapoints::Array{Float64,2})
     println(outfile, "-> Cluster ", i)
     for j in eachindex(names)
-        print(outfile, names[j])
-        for point in datapoints[:, j]
-            print(outfile, "\t", point)
-        end
-        println(outfile)
+        println(outfile, join(vcat(names[j], datapoints[:, j]), "\t"))
     end
 end
 
@@ -283,6 +285,8 @@ function QT(filename::String, _threshold::String)
     dists, diameter = get_dists(datapoints)
     if percentage
         threshold = threshold/100 * diameter
+    else
+        @warn "Given threshold is greater than the diameter of the dataset ($diameter)."
     end
     neighbours = get_neighbours(dists, threshold, num_points)
 
@@ -309,5 +313,10 @@ function QT(filename::String, _threshold::String)
     close(outfile)
 end
 
-#@profiler @time QT(get_args()...)
-@time QT(get_args()...)
+try
+    @time QT(get_args()...)
+catch e
+    msg = sprint(showerror, e)
+    println(msg)
+    exit(1)
+end
