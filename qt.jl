@@ -4,6 +4,7 @@
 # AUTHOR: FREDERIK GADE
 
 using LinearAlgebra: dot, mul!
+const SAVE_CLUSTER_VALS = (2, 3, 6, 9, 11, 23, 47, 106, 235, 551, 699)
 
 ###
 ### HELPER FUNCTIONS
@@ -15,7 +16,7 @@ function get_args()
         _threshold = ARGS[2]
     elseif arg_len == 1
         if ARGS[1] in ("-h", "--help")
-            println("usage: julia ", PROGRAM_FILE, " inputfile threshold")
+            println("usage: julia $PROGRAM_FILE inputfile threshold")
             println()
             println("""QT (Quality Threshold) Clustering is an algorithm that groups multi-dimensional
             vectors into high quality clusters. Quality is ensured by finding large cluster
@@ -207,7 +208,7 @@ function generate_candidate(seed, dists, neighbours,
     candidate_diameter = zero(Float64)
 
     while length(seed_neighbours) > 0
-        if length(candidate_cluster) in (2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 400, 610)
+        if length(candidate_cluster) in SAVE_CLUSTER_VALS
             found_seed = cluster_find(candidate_cluster, calculated_dict, seed)
             if found_seed !== 0
                 return candidate_clusters[found_seed], candidate_diameters[found_seed]
