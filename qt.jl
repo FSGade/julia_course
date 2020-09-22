@@ -301,7 +301,7 @@ function QT(filename::String, _threshold::String)
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
             threshold, candidate_clusters, candidate_diameters, calculated_dict)
 
-        best_cluster_array = sort(collect(best_cluster))
+        best_cluster_array = collect(best_cluster)
         write_output(outfile, cluster_num,
             names[best_cluster_array], datapoints[:, best_cluster_array])
         cluster_num += 1
