@@ -56,10 +56,6 @@ function dp(lnsplit::Array{SubString{String},1},
     end
 end
 
-function remove_clustered!(arr::Array{Int64,1}, remove::Array{Int64,1})
-    filter!(x-> x ∉ remove, arr)
-end
-
 ###
 ### PREPROCESSING FUNCTIONS
 ###
@@ -149,7 +145,7 @@ function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
     neighbours = [Int[] for i = 1:num_points]
     for i = 1:num_points
         @simd for j = i+1:num_points
-            @inbounds if dists[i, j] <= threshold
+            @inbounds if dists[j, i] <= threshold
                 push!(neighbours[i], j)
                 push!(neighbours[j], i)
             end
@@ -177,13 +173,13 @@ end
 function update_data!(unclustered::Array{Int64,1},
         neighbours::Array{Array{Int64,1},1},
         candidate_clusters::Array{Array{Int64,1},1}, best::Array{Int64,1})
+    filter!(x-> x ∉ best, unclustered)
     for i in unclustered
         neighbours[i] = setdiff(neighbours[i], best)
         if length(intersect(candidate_clusters[i], best)) != 0
             candidate_clusters[i] = Int[]
         end
     end
-    remove_clustered!(unclustered, best)
     nothing
 end
 
@@ -233,6 +229,8 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
         candidate_clusters, candidate_diameters)
     best_cluster_size = 0
     best_diameter = 0
+    best_cluster_size = zero(Int64)
+    best_diameter = zero(Float64)
     best_cluster = Int[]
     for seed in unclustered
         if length(candidate_clusters[seed]) != 0
@@ -266,7 +264,6 @@ function QT(filename::String, _threshold::String)
     names, datapoints = open(f->read_points(f, lc), filename)
     num_points = size(datapoints, 2)
     dists, diameter = get_dists(datapoints)
-
     if percentage
         threshold = threshold/100 * diameter
     end
