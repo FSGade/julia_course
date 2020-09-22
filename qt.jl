@@ -137,7 +137,7 @@ function _pairwise!(r::Array{Float64,2}, a::Array{Float64,2})
     r
 end
 
-function get_dists(datapoints)
+function get_dists(datapoints::Array{Float64,2})
     n = size(datapoints, 2)
     r = Matrix{Float64}(undef, n, n)
     _pairwise!(r, datapoints)
@@ -147,7 +147,7 @@ end
 
 function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
         num_points::Int64)
-    neighbours = [Int[] for i = 1:num_points]
+    neighbours = [BitSet() for i = 1:num_points]
     for i = 1:num_points
         @simd for j = i+1:num_points
             @inbounds if dists[j, i] <= threshold
@@ -175,23 +175,22 @@ function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
 end
 
 function update_data!(unclustered::Array{Int64,1},
-        neighbours::Array{Array{Int64,1},1},
-        candidate_clusters::Array{Array{Int64,1},1}, best::Array{Int64,1})
-    filter!(x-> x ∉ best, unclustered)
+        neighbours,candidate_clusters, best)
+    setdiff!(unclustered, best)
     for i in unclustered
-        neighbours[i] = setdiff(neighbours[i], best)
-        if !isdisjoint(BitSet(candidate_clusters[i]), BitSet(best))
-            candidate_clusters[i] = Int[]
+        setdiff!(neighbours[i], best)
+        if !isdisjoint(candidate_clusters[i], best)
+            candidate_clusters[i] = BitSet()
         end
     end
     nothing
 end
 
-function cluster_find(candidate_cluster, calculated_dict)
-    ind = join(string.(sort(candidate_cluster)))
+function cluster_find(candidate_cluster, calculated_dict, seed)
+    ind = join(string.(candidate_cluster))
     val = get(calculated_dict, ind, 0)
     if val === 0
-        calculated_dict[ind] = candidate_cluster[begin]
+        calculated_dict[ind] = seed
         found_seed = 0
     else
         found_seed = calculated_dict[ind]
@@ -199,17 +198,17 @@ function cluster_find(candidate_cluster, calculated_dict)
     found_seed
 end
 
-function generate_candidate(seed, dists, neighbours::Array{Array{Int64,1},1},
+function generate_candidate(seed, dists, neighbours,
         threshold::Float64, calculated_dict, candidate_clusters, candidate_diameters)
-    candidate_cluster = [seed]
+    candidate_cluster = BitSet([seed])
     last_added = seed
-    seed_neighbours = copy(neighbours[seed])
+    seed_neighbours = collect(copy(neighbours[seed]))
     diameter_cache = zeros(Float64, length(seed_neighbours))
     candidate_diameter = zero(Float64)
 
     while length(seed_neighbours) > 0
         if length(candidate_cluster) in (2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 400, 610)
-            found_seed = cluster_find(candidate_cluster, calculated_dict)
+            found_seed = cluster_find(candidate_cluster, calculated_dict, seed)
             if found_seed !== 0
                 return candidate_clusters[found_seed], candidate_diameters[found_seed]
             end
@@ -249,7 +248,7 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
         candidate_clusters, candidate_diameters, calculated_dict)
     best_cluster_size = zero(Int64)
     best_diameter = zero(Float64)
-    best_cluster = Int[]
+    best_cluster = BitSet()
     for seed in unclustered
         if length(candidate_clusters[seed]) != 0
             candidate, candidate_diameter =
@@ -291,20 +290,20 @@ function QT(filename::String, _threshold::String)
     neighbours = get_neighbours(dists, threshold, num_points)
 
     unclustered = collect(1:num_points)
-    candidate_clusters = [Int[] for i = 1:num_points]
+    candidate_clusters = [BitSet() for i = 1:num_points]
     candidate_diameters = Vector{Float64}(undef, num_points)
 
     cluster_num = 1
-    outfile = open(filename*".out", "w")
+    outfile = open("$filename.out", "w")
 
     while length(unclustered) > 0
         calculated_dict = Dict{String,Int64}()
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
             threshold, candidate_clusters, candidate_diameters, calculated_dict)
 
-        sorted_cluster = sort(best_cluster)
+        best_cluster_array = sort(collect(best_cluster))
         write_output(outfile, cluster_num,
-            names[sorted_cluster], datapoints[:,sorted_cluster])
+            names[best_cluster_array], datapoints[:, best_cluster_array])
         cluster_num += 1
 
         update_data!(unclustered, neighbours, candidate_clusters, best_cluster)
