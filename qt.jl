@@ -160,12 +160,11 @@ end
 function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
         last_added, threshold)
     @inbounds d = dists[seed_neighbours, last_added]
-    min_dist = threshold +1
+    min_dist = threshold + 1
     min_i = 1
     for (i, (x, y)) in enumerate(zip(diameter_cache, d))
         diameter_cache[i] = x > y ? x : y
-        (min_i, min_dist) = diameter_cache[i] < min_dist ?
-            (i, diameter_cache[i]) : (min_i, min_dist)
+        (diameter_cache[i] < min_dist) && ((min_i, min_dist) = (i, diameter_cache[i]))
     end
     min_i
 end
@@ -176,15 +175,27 @@ function update_data!(unclustered::Array{Int64,1},
     filter!(x-> x ∉ best, unclustered)
     for i in unclustered
         neighbours[i] = setdiff(neighbours[i], best)
-        if length(intersect(candidate_clusters[i], best)) != 0
+        if !isdisjoint(BitSet(candidate_clusters[i]), BitSet(best))
             candidate_clusters[i] = Int[]
         end
     end
     nothing
 end
 
+function cluster_find(candidate_cluster, calculated_dict)
+    ind = join(string.(sort(candidate_cluster)))
+    val = get(calculated_dict, ind, 0)
+    if val === 0
+        calculated_dict[ind] = candidate_cluster[begin]
+        found_seed = 0
+    else
+        found_seed = calculated_dict[ind]
+    end
+    found_seed
+end
+
 function generate_candidate(seed, dists, neighbours::Array{Array{Int64,1},1},
-        threshold::Float64)
+        threshold::Float64, calculated_dict, candidate_clusters, candidate_diameters)
     candidate_cluster = [seed]
     last_added = seed
     seed_neighbours = copy(neighbours[seed])
@@ -192,6 +203,13 @@ function generate_candidate(seed, dists, neighbours::Array{Array{Int64,1},1},
     candidate_diameter = zero(Float64)
 
     while length(seed_neighbours) > 0
+        if length(candidate_cluster) in (2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 400, 610)
+            found_seed = cluster_find(candidate_cluster, calculated_dict)
+            if found_seed !== 0
+                return candidate_clusters[found_seed], candidate_diameters[found_seed]
+            end
+        end
+
         candidate_point = update_diameter_cache!(diameter_cache, dists,
             seed_neighbours, last_added, threshold)
         candidate_point_val = seed_neighbours[candidate_point]
@@ -226,9 +244,7 @@ function write_output(outfile, i, names, datapoints)
 end
 
 function get_best_cluster(unclustered, dists, neighbours, threshold,
-        candidate_clusters, candidate_diameters)
-    best_cluster_size = 0
-    best_diameter = 0
+        candidate_clusters, candidate_diameters, calculated_dict)
     best_cluster_size = zero(Int64)
     best_diameter = zero(Float64)
     best_cluster = Int[]
@@ -239,7 +255,8 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
             candidate_size = length(candidate)
         else
             candidate, candidate_diameter =
-                generate_candidate(seed, dists, neighbours, threshold)
+                generate_candidate(seed, dists, neighbours, threshold,
+                calculated_dict, candidate_clusters, candidate_diameters)
             candidate_clusters[seed] = candidate
             candidate_diameters[seed] = candidate_diameter
             candidate_size = length(candidate)
@@ -277,12 +294,11 @@ function QT(filename::String, _threshold::String)
     outfile = open(filename*".out", "w")
 
     while length(unclustered) > 0
+        calculated_dict = Dict{String,Int64}()
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
-            threshold, candidate_clusters, candidate_diameters)
+            threshold, candidate_clusters, candidate_diameters, calculated_dict)
 
-        #sorted_cluster = sort(best_cluster)
-        sorted_cluster = best_cluster
-
+        sorted_cluster = sort(best_cluster)
         write_output(outfile, cluster_num,
             names[sorted_cluster], datapoints[:,sorted_cluster])
         cluster_num += 1
