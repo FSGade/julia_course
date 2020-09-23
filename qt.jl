@@ -166,14 +166,6 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
             candidate_size = length(candidate)
         end
 
-function cluster_find(candidate_cluster, calculated_dict, seed)
-    ind = join(string.(candidate_cluster))
-    val = get(calculated_dict, ind, 0)
-    if val === 0
-        calculated_dict[ind] = seed
-        found_seed = 0
-    else
-        found_seed = calculated_dict[ind]
         if candidate_size > best_cluster_size ||
                 (candidate_size == best_cluster_size
                 && candidate_diameter < best_diameter)
@@ -182,7 +174,6 @@ function cluster_find(candidate_cluster, calculated_dict, seed)
             best_diameter = candidate_diameter
         end
     end
-    found_seed
     best_cluster
 end
 
@@ -196,7 +187,7 @@ function generate_candidate(seed, dists, neighbours,
 
     while length(seed_neighbours) > 0
         if length(candidate_cluster) in SAVE_CLUSTER_VALS
-            found_seed = cluster_find(candidate_cluster, calculated_dict, seed)
+            found_seed = find_cluster(candidate_cluster, calculated_dict, seed)
             if found_seed !== 0
                 return candidate_clusters[found_seed], candidate_diameters[found_seed]
             end
@@ -224,7 +215,13 @@ function generate_candidate(seed, dists, neighbours,
     return candidate_cluster, candidate_diameter
 end
 
+function find_cluster(candidate_cluster, calculated_dict, seed)
+    calculated_index = hash(candidate_cluster)
+    found_seed = get(calculated_dict, calculated_index, 0)
+    if found_seed === 0
+        calculated_dict[calculated_index] = seed
     end
+    found_seed
 end
 
 function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
@@ -276,7 +273,7 @@ function QT(filename::String, _threshold::String)
     outfile = open("$filename.out", "w")
 
     while length(unclustered) > 0
-        calculated_dict = Dict{String,Int64}()
+        calculated_dict = Dict{UInt64,Int64}()
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
             threshold, candidate_clusters, candidate_diameters, calculated_dict)
 
