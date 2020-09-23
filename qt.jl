@@ -110,7 +110,7 @@ function _get_dists!(r::Array{Float64,2}, a::Array{Float64,2})
     sa2 = sumsq_percol(a)
     @inbounds for j = 1:n
         for i = 1:(j - 1)
-            r[i, j] = r[j, i]
+            @inbounds r[i, j] = r[j, i]
         end
         r[j, j] = 0
         sa2j = sa2[j]
@@ -133,7 +133,7 @@ function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
         num_points::Int64)
     neighbours = [BitSet() for i = 1:num_points]
     for i = 1:num_points
-        @simd for j = i+1:num_points
+        @inbounds @simd for j = i+1:num_points
             @inbounds if dists[j, i] <= threshold
                 push!(neighbours[i], j)
                 push!(neighbours[j], i)
@@ -215,7 +215,7 @@ function generate_candidate(seed, dists, neighbours,
     return candidate_cluster, candidate_diameter
 end
 
-function find_cluster(candidate_cluster, calculated_dict, seed)
+function find_cluster(candidate_cluster::BitSet, calculated_dict, seed::Int64)
     calculated_index = hash(candidate_cluster)
     found_seed = get(calculated_dict, calculated_index, 0)
     if found_seed === 0
@@ -224,21 +224,21 @@ function find_cluster(candidate_cluster, calculated_dict, seed)
     found_seed
 end
 
-function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
-        last_added, threshold)
-    @inbounds dist_to_last = dists[seed_neighbours, last_added]
-    min_dist = threshold + 1
+function update_diameter_cache!(diameter_cache::Array{Float64,1},
+        dists::Array{Float64,2}, seed_neighbours::Array{Int64,1},
+        last_added::Int64, threshold::Float64)
     min_index = 1
-    for (i, (cached_dist, new_dist)) in enumerate(zip(diameter_cache, dist_to_last))
-        diameter_cache[i] = cached_dist > new_dist ? cached_dist : new_dist
-        (diameter_cache[i] < min_dist) &&
+    min_dist = threshold + 1
+    @inbounds for (i, (cached_dist, new_dist)) in enumerate(zip(diameter_cache,
+            view(dists, seed_neighbours, last_added)))
+        @inbounds diameter_cache[i] = cached_dist > new_dist ? cached_dist : new_dist
+        @inbounds (diameter_cache[i] < min_dist) &&
             ((min_index, min_dist) = (i, diameter_cache[i]))
     end
     min_index
 end
 
-function update_data!(unclustered::Array{Int64,1},
-        neighbours,candidate_clusters, best)
+function update_data!(unclustered::Array{Int64,1}, neighbours,candidate_clusters, best)
     setdiff!(unclustered, best)
     for unclustered_point in unclustered
         setdiff!(neighbours[unclustered_point], best)
