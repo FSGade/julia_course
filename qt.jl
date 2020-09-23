@@ -249,9 +249,9 @@ function update_data!(unclustered::Array{Int64,1},
     nothing
 end
 
-#####################
-### MAIN FUNCTION ###
-#####################
+######################
+### MAIN ALGORITHM ###
+######################
 function QT(filename::String, _threshold::String)
     threshold, percentage, num_points = validate_input(filename, _threshold)
     names, datapoints = open(f -> read_points(f, num_points), filename)
@@ -288,6 +288,10 @@ function QT(filename::String, _threshold::String)
     close(outfile)
 end
 
+
+#####################
+### MAIN FUNCTION ###
+#####################
 function main()
     arg_len = length(ARGS)
     try
@@ -312,8 +316,6 @@ function main()
         println(msg)
         exit(1)
     end
-    nothing
 end
 
-### Calling QT()
 main()
