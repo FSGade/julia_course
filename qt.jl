@@ -1,48 +1,30 @@
 #!/usr/bin/env julia
-# PRELIMINARY QT CLUSTERING IMPLEMENTATION
-# SAVE CANDIDATE CLUSTERS & "DIAMETER CACHE" OPTIMISATIONS
+# QT CLUSTERING IMPLEMENTATION
 # AUTHOR: FREDERIK GADE
 
 using LinearAlgebra: dot, mul!
+
 const SAVE_CLUSTER_VALS = (2, 3, 6, 9, 11, 23, 47, 106, 235, 551, 699)
+const HELP_MESSAGE = """usage: julia $PROGRAM_FILE inputfile threshold
 
-###
-### HELPER FUNCTIONS
-###
-function get_args()
-    arg_len = length(ARGS)
-    if arg_len == 2
-        filename = ARGS[1]
-        _threshold = ARGS[2]
-    elseif arg_len == 1
-        if ARGS[1] in ("-h", "--help")
-            println("usage: julia $PROGRAM_FILE inputfile threshold")
-            println()
-            println("""QT (Quality Threshold) Clustering is an algorithm that groups multi-dimensional
-            vectors into high quality clusters. Quality is ensured by finding large cluster
-            whose diameter does not exceed a given user-defined diameter threshold.
-            This method prevents dissimilar vectors from being forced under the same
-            cluster and ensures that only good quality clusters will be formed.""")
-            println()
-            println("arguments:")
-            println("""    inputfile\tInput file name (tab-separated list of floats w/ optional name
-            \t\tin first column)""")
-            println("    threshold\tQuality threshold of cluster diameter")
-            println()
-        else
-            println("Only one argument was supplied. Use flag -h/--help for help.")
-        end
-        exit(1)
-    elseif arg_len == 0
-        println("No arguments supplied. Use flag -h/--help for help.")
-        exit(1)
-    else
-        println("Too many arguments supplied (only 2 allowed). Use flag -h/--help for help.")
-        exit(1)
-    end
-    return filename, _threshold
-end
+QT (Quality Threshold) Clustering is an algorithm that groups multi-dimensional
+vectors into high quality clusters. Quality is ensured by finding large cluster
+whose diameter does not exceed a given user-defined diameter threshold.
+This method prevents dissimilar vectors from being forced under the same
+cluster and ensures that only good quality clusters will be formed.
 
+arguments:
+    inputfile\tInput file name (tab-separated list of floats w/ optional name
+\t\tin first column)
+    threshold\tQuality threshold of cluster diameter
+"""
+const NO_ARGS = "No arguments supplied. Use -h/--help for help."
+const ONE_ARG = "Only one argument was supplied. Use -h/--help for help."
+const TOO_MANY_ARGS = "Too many arguments supplied. Use -h/--help for help."
+
+##############################
+### INPUT/OUTPUT FUNCTIONS ###
+##############################
 function tab_split(ln)
     split(ln, "\t")
 end
@@ -50,33 +32,24 @@ end
 function dp(lnsplit::Array{SubString{String},1},
         offset::Int64, i::Int64)
     datapoint = [parse(Float64, x) for x in lnsplit[offset:end]]
-    if offset == 1
+    if offset === 1
         return string("Point", lpad(i, 4, "0")), datapoint
     else
         return string(lnsplit[1]), datapoint
     end
 end
 
-###
-### PREPROCESSING FUNCTIONS
-###
-
 function validate_input(filename, _threshold)
     percentage = false
-    lc = 0
-    try
-        lc = countlines(filename)
-    catch e
-        msg = sprint(showerror, e)
-        println(msg)
-    end
+    num_points = countlines(filename)
     threshold = tryparse(Float64, _threshold)
     if threshold === nothing
         if _threshold[end] == '%'
             percentage = true
             _threshold = chop(_threshold)
             threshold = tryparse(Float64, _threshold)
-            (threshold === nothing) && throw(ArgumentError("Threshold has to be a number or percentage"))
+            (threshold === nothing) &&
+                throw(ArgumentError("Threshold has to be a number/percentage"))
             if threshold < 0
                 throw(ArgumentError("Threshold has to be positive"))
             elseif threshold > 100
@@ -84,11 +57,10 @@ function validate_input(filename, _threshold)
             end
         end
     end
-    threshold, percentage, lc
+    threshold, percentage, num_points
 end
 
-#TODO: Name list
-function read_points(f, lc)
+function read_points(f, num_points)
     i = 1
     firstline = tab_split(readline(f))
     if tryparse(Float64, firstline[1]) === nothing
@@ -99,8 +71,8 @@ function read_points(f, lc)
         offset = 1
     end
 
-    datapoints = Matrix{Float64}(undef, dim, lc)
-    names = Vector{String}(undef, lc)
+    datapoints = Matrix{Float64}(undef, dim, num_points)
+    names = Vector{String}(undef, num_points)
 
     names[i], datapoints[:, i] = dp(firstline, offset, i)
     for ln in eachline(f)
@@ -111,6 +83,17 @@ function read_points(f, lc)
     names, datapoints
 end
 
+function write_output(outfile::IO, i::Int64, names::Array{String, 1},
+    datapoints::Array{Float64,2})
+    println(outfile, "-> Cluster ", i)
+    for j in eachindex(names)
+        println(outfile, join(vcat(names[j], datapoints[:, j]), "\t"))
+    end
+end
+
+###############################
+### PREPROCESSING FUNCTIONS ###
+###############################
 function sumsq_percol(a::Array{Float64,2})
     n = size(a, 2)
     r = Vector{Float64}(undef, n)
@@ -121,7 +104,7 @@ function sumsq_percol(a::Array{Float64,2})
     return r
 end
 
-function _pairwise!(r::Array{Float64,2}, a::Array{Float64,2})
+function _get_dists!(r::Array{Float64,2}, a::Array{Float64,2})
     m, n = size(a)
     mul!(r, a', a)
     sa2 = sumsq_percol(a)
@@ -141,7 +124,7 @@ end
 function get_dists(datapoints::Array{Float64,2})
     n = size(datapoints, 2)
     r = Matrix{Float64}(undef, n, n)
-    _pairwise!(r, datapoints)
+    _get_dists!(r, datapoints)
     diameter = maximum(r)
     r, diameter
 end
@@ -160,90 +143,9 @@ function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
     neighbours
 end
 
-###
-### CORE ALGORITHM FUNCTIONS
-###
-function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
-        last_added, threshold)
-    @inbounds d = dists[seed_neighbours, last_added]
-    min_dist = threshold + 1
-    min_i = 1
-    for (i, (x, y)) in enumerate(zip(diameter_cache, d))
-        diameter_cache[i] = x > y ? x : y
-        (diameter_cache[i] < min_dist) && ((min_i, min_dist) = (i, diameter_cache[i]))
-    end
-    min_i
-end
-
-function update_data!(unclustered::Array{Int64,1},
-        neighbours,candidate_clusters, best)
-    setdiff!(unclustered, best)
-    for i in unclustered
-        setdiff!(neighbours[i], best)
-        if !isdisjoint(candidate_clusters[i], best)
-            candidate_clusters[i] = BitSet()
-        end
-    end
-    nothing
-end
-
-function cluster_find(candidate_cluster, calculated_dict, seed)
-    ind = join(string.(candidate_cluster))
-    val = get(calculated_dict, ind, 0)
-    if val === 0
-        calculated_dict[ind] = seed
-        found_seed = 0
-    else
-        found_seed = calculated_dict[ind]
-    end
-    found_seed
-end
-
-function generate_candidate(seed, dists, neighbours,
-        threshold::Float64, calculated_dict, candidate_clusters, candidate_diameters)
-    candidate_cluster = BitSet([seed])
-    last_added = seed
-    seed_neighbours = collect(copy(neighbours[seed]))
-    diameter_cache = zeros(Float64, length(seed_neighbours))
-    candidate_diameter = zero(Float64)
-
-    while length(seed_neighbours) > 0
-        if length(candidate_cluster) in SAVE_CLUSTER_VALS
-            found_seed = cluster_find(candidate_cluster, calculated_dict, seed)
-            if found_seed !== 0
-                return candidate_clusters[found_seed], candidate_diameters[found_seed]
-            end
-        end
-
-        candidate_point = update_diameter_cache!(diameter_cache, dists,
-            seed_neighbours, last_added, threshold)
-        candidate_point_val = seed_neighbours[candidate_point]
-
-        if diameter_cache[candidate_point] < threshold
-            candidate_diameter = diameter_cache[candidate_point]
-            @inbounds push!(candidate_cluster, candidate_point_val)
-            @inbounds popat!(seed_neighbours, candidate_point)
-            @inbounds popat!(diameter_cache, candidate_point)
-            last_added = candidate_point_val
-        else
-            return candidate_cluster, candidate_diameter
-        end
-    end
-
-    if candidate_diameter == 0
-        return candidate_cluster, Inf
-    end
-
-    return candidate_cluster, candidate_diameter
-end
-
-function write_output(outfile::IO, i::Int64, names::Array{String, 1},
-    datapoints::Array{Float64,2})
-    println(outfile, "-> Cluster ", i)
-    for j in eachindex(names)
-        println(outfile, join(vcat(names[j], datapoints[:, j]), "\t"))
-    end
-end
+################################
+### CORE ALGORITHM FUNCTIONS ###
+################################
 
 function get_best_cluster(unclustered, dists, neighbours, threshold,
         candidate_clusters, candidate_diameters, calculated_dict)
@@ -264,6 +166,14 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
             candidate_size = length(candidate)
         end
 
+function cluster_find(candidate_cluster, calculated_dict, seed)
+    ind = join(string.(candidate_cluster))
+    val = get(calculated_dict, ind, 0)
+    if val === 0
+        calculated_dict[ind] = seed
+        found_seed = 0
+    else
+        found_seed = calculated_dict[ind]
         if candidate_size > best_cluster_size ||
                 (candidate_size == best_cluster_size
                 && candidate_diameter < best_diameter)
@@ -272,22 +182,90 @@ function get_best_cluster(unclustered, dists, neighbours, threshold,
             best_diameter = candidate_diameter
         end
     end
+    found_seed
     best_cluster
 end
 
-###
-### MAIN FUNCTION
-###
+function generate_candidate(seed, dists, neighbours,
+        threshold::Float64, calculated_dict, candidate_clusters, candidate_diameters)
+    candidate_cluster = BitSet([seed])
+    last_added = seed
+    seed_neighbours = collect(copy(neighbours[seed]))
+    diameter_cache = zeros(Float64, length(seed_neighbours))
+    candidate_diameter = zero(Float64)
+
+    while length(seed_neighbours) > 0
+        if length(candidate_cluster) in SAVE_CLUSTER_VALS
+            found_seed = cluster_find(candidate_cluster, calculated_dict, seed)
+            if found_seed !== 0
+                return candidate_clusters[found_seed], candidate_diameters[found_seed]
+            end
+        end
+
+        candidate_point_index = update_diameter_cache!(diameter_cache, dists,
+            seed_neighbours, last_added, threshold)
+        candidate_point_value = seed_neighbours[candidate_point_index]
+
+        if diameter_cache[candidate_point_index] < threshold
+            candidate_diameter = diameter_cache[candidate_point_index]
+            @inbounds push!(candidate_cluster, candidate_point_value)
+            @inbounds popat!(seed_neighbours, candidate_point_index)
+            @inbounds popat!(diameter_cache, candidate_point_index)
+            last_added = candidate_point_value
+        else
+            return candidate_cluster, candidate_diameter
+        end
+    end
+
+    if candidate_diameter === zero(Float64)
+        return candidate_cluster, Inf
+    end
+
+    return candidate_cluster, candidate_diameter
+end
+
+    end
+end
+
+function update_diameter_cache!(diameter_cache, dists, seed_neighbours,
+        last_added, threshold)
+    @inbounds dist_to_last = dists[seed_neighbours, last_added]
+    min_dist = threshold + 1
+    min_index = 1
+    for (i, (cached_dist, new_dist)) in enumerate(zip(diameter_cache, dist_to_last))
+        diameter_cache[i] = cached_dist > new_dist ? cached_dist : new_dist
+        (diameter_cache[i] < min_dist) &&
+            ((min_index, min_dist) = (i, diameter_cache[i]))
+    end
+    min_index
+end
+
+function update_data!(unclustered::Array{Int64,1},
+        neighbours,candidate_clusters, best)
+    setdiff!(unclustered, best)
+    for unclustered_point in unclustered
+        setdiff!(neighbours[unclustered_point], best)
+        if !isdisjoint(candidate_clusters[unclustered_point], best)
+            candidate_clusters[unclustered_point] = BitSet()
+        end
+    end
+    nothing
+end
+
+#####################
+### MAIN FUNCTION ###
+#####################
 function QT(filename::String, _threshold::String)
-    threshold, percentage, lc = validate_input(filename, _threshold)
-    names, datapoints = open(f->read_points(f, lc), filename)
-    num_points = size(datapoints, 2)
+    threshold, percentage, num_points = validate_input(filename, _threshold)
+    names, datapoints = open(f -> read_points(f, num_points), filename)
     dists, diameter = get_dists(datapoints)
+
     if percentage
         threshold = threshold/100 * diameter
-    else
-        @warn "Given threshold is greater than the diameter of the dataset ($diameter)."
+    elseif threshold > diameter
+        @warn "Given threshold ($threshold) is greater than the diameter of the dataset ($diameter)."
     end
+
     neighbours = get_neighbours(dists, threshold, num_points)
 
     unclustered = collect(1:num_points)
@@ -305,18 +283,40 @@ function QT(filename::String, _threshold::String)
         best_cluster_array = collect(best_cluster)
         write_output(outfile, cluster_num,
             names[best_cluster_array], datapoints[:, best_cluster_array])
-        cluster_num += 1
-
         update_data!(unclustered, neighbours, candidate_clusters, best_cluster)
+
+        cluster_num += 1
     end
 
     close(outfile)
 end
 
-try
-    @time QT(get_args()...)
-catch e
-    msg = sprint(showerror, e)
-    println(msg)
-    exit(1)
+function main()
+    arg_len = length(ARGS)
+    try
+        if arg_len == 2
+            @time QT(ARGS[1], ARGS[2])
+            exit(0)
+        elseif arg_len == 1
+            if ARGS[1] in ("-h", "--help")
+                println(HELP_MESSAGE)
+                exit(0)
+            else
+                println(ONE_ARG)
+            end
+        elseif arg_len == 0
+            println(NO_ARGS)
+        else
+            println(TOO_MANY_ARGS)
+        end
+        exit(1)
+    catch e
+        msg = sprint(showerror, e)
+        println(msg)
+        exit(1)
+    end
+    nothing
 end
+
+### Calling QT()
+main()
