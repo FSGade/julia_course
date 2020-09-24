@@ -39,27 +39,6 @@ function dp(lnsplit::Array{SubString{String},1},
     end
 end
 
-function validate_input(filename, _threshold)
-    percentage = false
-    num_points = countlines(filename)
-    threshold = tryparse(Float64, _threshold)
-    if threshold === nothing
-        if _threshold[end] == '%'
-            percentage = true
-            _threshold = chop(_threshold)
-            threshold = tryparse(Float64, _threshold)
-            (threshold === nothing) &&
-                throw(ArgumentError("Threshold has to be a number/percentage"))
-            if threshold < 0
-                throw(ArgumentError("Threshold has to be positive"))
-            elseif threshold > 100
-                @warn "Percentage given is over 100%."
-            end
-        end
-    end
-    threshold, percentage, num_points
-end
-
 function read_points(f, num_points)
     i = 1
     firstline = tab_split(readline(f))
@@ -83,17 +62,42 @@ function read_points(f, num_points)
     names, datapoints
 end
 
-function write_output(outfile::IO, i::Int64, names::Array{String, 1},
+function validate_input(filename, _threshold)
+    percentage = false
+    num_points = countlines(filename)
+    threshold = tryparse(Float64, _threshold)
+    if threshold === nothing
+        if _threshold[end] == '%'
+            percentage = true
+            _threshold = chop(_threshold)
+            threshold = tryparse(Float64, _threshold)
+            (threshold === nothing) &&
+                throw(ArgumentError("Threshold has to be a number/percentage"))
+            if threshold < 0
+                throw(ArgumentError("Threshold has to be positive"))
+            elseif threshold > 100
+                @warn "Percentage given is over 100%."
+            end
+        end
+    end
+    threshold, percentage, num_points
+end
+
+function write_output(outfile::IO, i::Int64, best_cluster::BitSet, names::Array{String, 1},
     datapoints::Array{Float64,2})
     println(outfile, "-> Cluster ", i)
-    for j in eachindex(names)
-        println(outfile, join(vcat(names[j], datapoints[:, j]), "\t"))
+    for c in best_cluster
+        print(outfile, names[c], "\t")
+        println(outfile, join(view(datapoints, :, c), "\t"))
     end
 end
 
 ###############################
 ### PREPROCESSING FUNCTIONS ###
 ###############################
+
+# Distance matrix calculation is copied/modified from JuliaStats/Distances.jl
+# https://github.com/JuliaStats/Distances.jl/blob/master/LICENSE.md
 function sumsq_percol(a::Array{Float64,2})
     n = size(a, 2)
     r = Vector{Float64}(undef, n)
@@ -128,6 +132,7 @@ function get_dists(datapoints::Array{Float64,2})
     diameter = maximum(r)
     r, diameter
 end
+# End distance matrix calculation
 
 function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
         num_points::Int64)
@@ -150,10 +155,10 @@ end
 function get_best_cluster(unclustered, dists, neighbours, threshold,
         candidate_clusters, candidate_diameters, calculated_dict)
     best_cluster_size = zero(Int64)
-    best_diameter = zero(Float64)
+    best_diameter = zero(eltype(candidate_diameters))
     best_cluster = BitSet()
     for seed in unclustered
-        if length(candidate_clusters[seed]) != 0
+        if !isempty(candidate_clusters[seed])
             candidate, candidate_diameter =
                 candidate_clusters[seed], candidate_diameters[seed]
             candidate_size = length(candidate)
@@ -182,10 +187,10 @@ function generate_candidate(seed, dists, neighbours,
     candidate_cluster = BitSet([seed])
     last_added = seed
     seed_neighbours = collect(copy(neighbours[seed]))
-    diameter_cache = zeros(Float64, length(seed_neighbours))
-    candidate_diameter = zero(Float64)
+    diameter_cache = zeros(eltype(dists), length(seed_neighbours))
+    candidate_diameter = zero(eltype(dists))
 
-    while length(seed_neighbours) > 0
+    while !isempty(seed_neighbours)
         if length(candidate_cluster) in SAVE_CLUSTER_VALS
             found_seed = find_cluster(candidate_cluster, calculated_dict, seed)
             if found_seed !== 0
@@ -238,7 +243,7 @@ function update_diameter_cache!(diameter_cache::Array{Float64,1},
     min_index
 end
 
-function update_data!(unclustered::Array{Int64,1}, neighbours,candidate_clusters, best)
+function update_data!(unclustered::Array{Int64,1}, neighbours, candidate_clusters, best)
     setdiff!(unclustered, best)
     for unclustered_point in unclustered
         setdiff!(neighbours[unclustered_point], best)
@@ -277,9 +282,7 @@ function QT(filename::String, _threshold::String)
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
             threshold, candidate_clusters, candidate_diameters, calculated_dict)
 
-        best_cluster_array = collect(best_cluster)
-        write_output(outfile, cluster_num,
-            names[best_cluster_array], datapoints[:, best_cluster_array])
+        write_output(outfile, cluster_num, best_cluster, names, datapoints)
         update_data!(unclustered, neighbours, candidate_clusters, best_cluster)
 
         cluster_num += 1
