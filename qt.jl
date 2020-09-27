@@ -138,8 +138,9 @@ function get_neighbours(dists::Array{Float64,2}, threshold::Float64,
         num_points::Int64)
     neighbours = [BitSet() for i = 1:num_points]
     for i = 1:num_points
+        distsi = view(dists, :, i)
         @inbounds @simd for j = i+1:num_points
-            @inbounds if dists[j, i] <= threshold
+            @inbounds if distsi[j] <= threshold
                 push!(neighbours[i], j)
                 push!(neighbours[j], i)
             end
@@ -277,7 +278,7 @@ function QT(filename::String, _threshold::String)
     cluster_num = 1
     outfile = open("$filename.out", "w")
 
-    while length(unclustered) > 0
+    while !isempty(unclustered)
         calculated_dict = Dict{UInt64,Int64}()
         best_cluster = get_best_cluster(unclustered, dists, neighbours,
             threshold, candidate_clusters, candidate_diameters, calculated_dict)
