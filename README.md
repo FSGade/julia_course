@@ -2,6 +2,8 @@
 Code for special course in Julia aug-sep 2020
 
 ## Project (QT Clustering)
+### [Report: GitHub Wiki](https://github.com/FSGade/julia_course/wiki/Report:-Quality-Threshold-Clustering)
+
 >QT (Quality Threshold) Clustering is an algorithm that groups multi-dimensional vectors into high quality clusters. Quality is ensured by finding large cluster whose diameter does not exceed a given user-defined diameter threshold.
 >This method prevents dissimilar vectors from being forced under the same cluster and ensures that only good quality clusters will be formed.
 
